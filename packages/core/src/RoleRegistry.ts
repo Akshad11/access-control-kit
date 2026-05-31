@@ -1,12 +1,18 @@
 import { Role } from './types.js';
 import { validateRoleName } from './Validation.js';
-import { RoleAlreadyExistsError } from './errors.js';
+import {
+  RoleAlreadyExistsError,
+  CircularRoleInheritanceError,
+  InheritanceRoleNotFoundError,
+} from './errors.js';
 
 /**
- * RoleRegistry manages the lifecycle of unique roles within the Access Control Kit.
+ * RoleRegistry manages the lifecycle of unique roles and their inheritance graph structures
+ * within the Access Control Kit.
  */
 export class RoleRegistry {
   private readonly roles = new Map<string, Role>();
+  private readonly parentsMap = new Map<string, Set<string>>();
 
   /**
    * Registers a new role in the system.
@@ -26,6 +32,68 @@ export class RoleRegistry {
     const role: Role = { name };
     this.roles.set(name, role);
     return role;
+  }
+
+  /**
+   * Adds inheritance: roleName inherits from parentName.
+   * Runs cycle check beforehand and invalidates caches.
+   *
+   * @param roleName The child role inheriting
+   * @param parentName The parent role being inherited from
+   * @throws InheritanceRoleNotFoundError if the parent role is not registered
+   * @throws CircularRoleInheritanceError if cycle is detected
+   */
+  public addInheritance(roleName: string, parentName: string): void {
+    if (!this.roles.has(parentName)) {
+      throw new InheritanceRoleNotFoundError(parentName);
+    }
+
+    // Cycle detection: check if parentName has a path back to roleName
+    if (this.hasPath(parentName, roleName)) {
+      throw new CircularRoleInheritanceError(roleName, parentName);
+    }
+
+    let parents = this.parentsMap.get(roleName);
+    if (!parents) {
+      parents = new Set<string>();
+      this.parentsMap.set(roleName, parents);
+    }
+    parents.add(parentName);
+  }
+
+  /**
+   * Retrieves immediate parent role names.
+   *
+   * @param roleName The name of the role
+   */
+  public getParents(roleName: string): Set<string> {
+    return this.parentsMap.get(roleName) || new Set<string>();
+  }
+
+  /**
+   * Checks if there exists a directed path from start node to target node.
+   * Used for cycle detection.
+   */
+  public hasPath(start: string, target: string): boolean {
+    const visited = new Set<string>();
+    const dfs = (curr: string): boolean => {
+      if (curr === target) {
+        return true;
+      }
+      visited.add(curr);
+      const parents = this.parentsMap.get(curr);
+      if (parents) {
+        for (const parent of parents) {
+          if (!visited.has(parent)) {
+            if (dfs(parent)) {
+              return true;
+            }
+          }
+        }
+      }
+      return false;
+    };
+    return dfs(start);
   }
 
   /**
@@ -55,9 +123,10 @@ export class RoleRegistry {
   }
 
   /**
-   * Clears all registered roles.
+   * Clears all registered roles and parents mapping.
    */
   public clear(): void {
     this.roles.clear();
+    this.parentsMap.clear();
   }
 }

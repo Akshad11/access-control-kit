@@ -1,9 +1,10 @@
-import { User, Role, Permission } from './types.js';
+import { User, Permission } from './types.js';
 import { RoleRegistry } from './RoleRegistry.js';
 import { PermissionRegistry } from './PermissionRegistry.js';
 import { UserRoleStore } from './UserRoleStore.js';
 import { WildcardMatcher } from './WildcardMatcher.js';
 import { PermissionResolver } from './PermissionResolver.js';
+import { RoleBuilder } from './RoleBuilder.js';
 
 /**
  * AccessControl is the main entry point class for Phase 1 of the Access Control Kit.
@@ -29,8 +30,11 @@ export class AccessControl {
    * @throws InvalidRoleError if validation fails
    * @throws RoleAlreadyExistsError if role exists
    */
-  public role(name: string): Role {
-    return this.roleRegistry.register(name);
+  public role(name: string): RoleBuilder {
+    if (!this.roleRegistry.has(name)) {
+      this.roleRegistry.register(name);
+    }
+    return new RoleBuilder(name, this.roleRegistry, this.permissionResolver, this);
   }
 
   /**

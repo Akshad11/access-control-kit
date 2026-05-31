@@ -6,7 +6,7 @@ An enterprise-ready, high-performance, strongly-typed Role-Based Access Control 
 
 ## Features
 
-- ⚡ **High Performance**: Permission evaluations resolved in $O(\text{number\_of\_user\_roles})$ complexity, avoiding full permission list scans.
+- ⚡ **High Performance**: Permission evaluations resolved in `O(number_of_user_roles)` complexity, avoiding full permission list scans.
 - 🎯 **Wildcard Permissions**: Support for flexible patterns (e.g., `*`, `patient.*`, `user.*`) using compiled and cached regular expression matcher.
 - 🛡️ **Fail-Safe Validation**: Enforces strict format checks and handles duplicate/missing assets gracefully with custom errors.
 - 📦 **Modern Output Bundles**: Distributed with tree-shakeable ESM, CommonJS, and complete TypeScript `.d.ts` definitions.
@@ -91,6 +91,31 @@ auth.can(manager, 'user.create');     // false
 
 ---
 
+## Role Inheritance
+
+The library supports hierarchical roles with recursive permission inheritance using a fluent builder API:
+
+```typescript
+// Define base roles
+auth.role("Employee");
+
+// Manager inherits all permissions granted to Employee
+auth.role("Manager")
+  .inherits("Employee");
+
+// Admin inherits all Manager permissions (and recursively, Employee permissions)
+auth.role("Admin")
+  .inherits("Manager");
+```
+
+### Inheritance Mechanics
+
+1. **Recursive Resolution**: Permission checks traverse the inheritance graph recursively using a memoized BFS search to retrieve all ancestors, resolving evaluations in `O(number_of_user_roles)` for warm paths.
+2. **Cycle Prevention**: Circular dependencies (e.g. `A inherits B inherits A`) are strictly blocked. Adding an inheritance edge that forms a loop throws `CircularRoleInheritanceError` immediately.
+3. **Cache Invalidation**: All memoized ancestor and permission caches are safely invalidated when any new inheritance relationship is registered.
+
+---
+
 ## Wildcard Permissions
 
 The library uses a highly optimized compile-once caching engine (`WildcardMatcher`) to evaluate wildcard patterns.
@@ -107,8 +132,8 @@ The library uses a highly optimized compile-once caching engine (`WildcardMatche
 
 ### `AccessControl`
 
-#### `role(name: string): Role`
-Registers a unique role name. Throws `InvalidRoleError` if name is empty/whitespace, and `RoleAlreadyExistsError` if the name exists.
+#### `role(name: string): RoleBuilder`
+Registers a unique role name. Returns a `RoleBuilder` to support fluent inheritance chaining. Throws `InvalidRoleError` if name is empty/whitespace, and `RoleAlreadyExistsError` if the name exists.
 
 #### `permission(permission: string): Permission`
 Registers a unique permission pattern. Throws `InvalidPermissionError` if structure is invalid, and `PermissionAlreadyExistsError` if the permission already exists.
@@ -126,7 +151,7 @@ Removes an assigned role from a user. Throws `RoleNotFoundError` if the role doe
 Returns all role names currently assigned to the user. Returns an empty array if none.
 
 #### `can(user: User, permission: string): boolean`
-Evaluates whether user has access to the target permission. Runs in $O(\text{number\_of\_user\_roles})$ complexity.
+Evaluates whether user has access to the target permission. Runs in `O(number_of_user_roles)` complexity.
 
 ---
 

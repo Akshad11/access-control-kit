@@ -67,3 +67,23 @@ export class InvalidPermissionError extends AccessControlError {
     super(message);
   }
 }
+
+/**
+ * Thrown when a circular inheritance relation is detected.
+ */
+export class CircularRoleInheritanceError extends AccessControlError {
+  override readonly name = 'CircularRoleInheritanceError';
+  constructor(roleName: string, parentName: string) {
+    super(`Adding ${roleName} -> ${parentName} creates a cycle.`);
+  }
+}
+
+/**
+ * Thrown when trying to inherit from a role that does not exist.
+ */
+export class InheritanceRoleNotFoundError extends AccessControlError {
+  override readonly name = 'InheritanceRoleNotFoundError';
+  constructor(parentName: string) {
+    super(`Parent role "${parentName}" was not found.`);
+  }
+}

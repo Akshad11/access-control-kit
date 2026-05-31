@@ -6,7 +6,8 @@ import { RoleNotFoundError, PermissionNotFoundError } from './errors.js';
 
 /**
  * PermissionResolver manages the assignment of permissions to roles and resolves
- * user access checks. It implements high-performance checks optimized to O(number_of_user_roles).
+ * user access checks. It implements high-performance checks optimized to O(number_of_user_roles)
+ * with recursive hierarchical role ancestor caching.
  */
 export class PermissionResolver {
   // Main mapping of roles to all granted permissions as requested by internal data structures.
@@ -16,12 +17,63 @@ export class PermissionResolver {
   private readonly exactGrants = new Map<string, Set<string>>();
   private readonly wildcardGrants = new Map<string, Set<string>>();
 
+  // Memoization cache mapping each role name to its resolved set of all recursive ancestors
+  private readonly ancestorCache = new Map<string, Set<string>>();
+
   constructor(
     private readonly roleRegistry: RoleRegistry,
     private readonly permissionRegistry: PermissionRegistry,
     private readonly userRoleStore: UserRoleStore,
     private readonly wildcardMatcher: WildcardMatcher,
   ) {}
+
+  /**
+   * Invalidates all ancestor and permission resolution caches.
+   * Triggered when new role inheritance relationships are added.
+   */
+  public invalidateCache(): void {
+    this.ancestorCache.clear();
+  }
+
+  /**
+   * Retrieves all recursive ancestor roles (parents, grandparents, etc.) of a role.
+   * Leverages memoization to ensure optimal high-performance lookups.
+   *
+   * @param roleName The name of the role
+   * @returns Set containing all recursive ancestor role names
+   */
+  public getAncestors(roleName: string): Set<string> {
+    const cached = this.ancestorCache.get(roleName);
+    if (cached) {
+      return cached;
+    }
+
+    const ancestors = new Set<string>();
+    const queue: string[] = [];
+
+    // Gather direct parent roles
+    const directParents = this.roleRegistry.getParents(roleName);
+    for (const parent of directParents) {
+      queue.push(parent);
+    }
+
+    // Traverse ancestors recursively using BFS to prevent infinite loops and build linear arrays
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      if (!ancestors.has(current)) {
+        ancestors.add(current);
+        const parentsOfCurrent = this.roleRegistry.getParents(current);
+        for (const p of parentsOfCurrent) {
+          if (!ancestors.has(p)) {
+            queue.push(p);
+          }
+        }
+      }
+    }
+
+    this.ancestorCache.set(roleName, ancestors);
+    return ancestors;
+  }
 
   /**
    * Grants a permission to a role.
@@ -67,19 +119,31 @@ export class PermissionResolver {
 
   /**
    * Checks whether a user has a specific permission.
-   * Runs in O(number_of_user_roles) check complexity by utilizing segregated exact and wildcard checks.
+   * Runs in O(number_of_user_roles) check complexity by utilizing memoized parent hierarchies.
    *
    * @param userId The ID of the user
    * @param permission The target permission string to check
+   * @param passedRoles Optional array of pre-resolved roles to perform stateless checks
    * @returns true if the user has access, false otherwise
    */
   public can(userId: string, permission: string, passedRoles?: string[]): boolean {
-    const roles = passedRoles || this.userRoleStore.getRoles(userId);
-    if (roles.length === 0) {
+    const directRoles = passedRoles || this.userRoleStore.getRoles(userId);
+    if (directRoles.length === 0) {
       return false;
     }
 
-    for (const role of roles) {
+    // Deduplicate and collect all active roles (direct roles and inherited parent roles)
+    const activeRoles = new Set<string>();
+    for (const role of directRoles) {
+      activeRoles.add(role);
+      const ancestors = this.getAncestors(role);
+      for (const ancestor of ancestors) {
+        activeRoles.add(ancestor);
+      }
+    }
+
+    // Evaluate permission matches across active roles
+    for (const role of activeRoles) {
       // 1. Fast O(1) exact match check
       const exacts = this.exactGrants.get(role);
       if (exacts && exacts.has(permission)) {
@@ -111,11 +175,12 @@ export class PermissionResolver {
   }
 
   /**
-   * Clears all grants configurations.
+   * Clears all grants configurations and invalidates caches.
    */
   public clear(): void {
     this.grants.clear();
     this.exactGrants.clear();
     this.wildcardGrants.clear();
+    this.invalidateCache();
   }
 }

@@ -14,7 +14,7 @@
 
 ## ✨ Features at a Glance
 
-- ⚡ **High Performance**: Permission evaluations resolved in $O(\text{number\_of\_user\_roles})$ complexity, avoiding full permission list scans.
+- ⚡ **High Performance**: Permission evaluations resolved in `O(number_of_user_roles)` complexity, avoiding full permission list scans.
 - 🎯 **Wildcard Permissions**: Support for flexible patterns (e.g., `*`, `patient.*`, `user.*`) using compiled and cached regular expression matcher.
 - 🛡️ **Fail-Safe Validation**: Enforces strict format checks and handles duplicate/missing assets gracefully with custom errors.
 - 🎨 **Strict TypeScript Support**: Written in pure TypeScript with absolute type safety and zero dependencies.
