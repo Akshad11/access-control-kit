@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file. The format 
 
 ---
 
+## [0.5.0] - 2026-05-31
+
+### Added
+- **Multi-Tenant Scoping**: Upgraded the core library to fully isolate roles, permissions, user overrides, and temporary permissions per tenant organization.
+- **Tenant Context Checks**: Refactored the core resolver and coord entrypoints to accept `TenantContext` parameters inside checks and mutations, guaranteeing zero tenant leakage.
+- **Tenant Context Validations**: Implemented fail-safe validations throwing `TenantContextRequiredError` and `TenantNotFoundError` when multi-tenant mode is active.
+- **Triple-Nested Cache Design**: Advanced the user permission resolution cache to a triple-nested map structure (`userId -> tenantId -> permission -> cachedResult`), implementing targeted tenant-specific invalidations in $O(1)$ complexity.
+- **Unified Single/Multi Mode**: Integrated single-tenant backward compatibility cleanly by defaulting to `__default__` tenant ID context when no tenants are registered.
+- **Comprehensive Scoped Tests**: Wrote extensive multi-tenant integration tests achieving 100% statement and branch coverages.
+
 ## [0.4.0] - 2026-05-31
 
 ### Added

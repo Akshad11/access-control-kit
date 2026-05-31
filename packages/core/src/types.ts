@@ -54,4 +54,20 @@ export interface GrantTemporaryOptions {
   userId: string;
   permission: string;
   expiresAt: Date;
+  tenantId?: string;
+}
+
+/**
+ * Represents an organization or tenant in the system.
+ */
+export interface Tenant {
+  id: string;
+  name?: string;
+}
+
+/**
+ * The contextual scope for multi-tenant queries.
+ */
+export interface TenantContext {
+  tenantId: string;
 }

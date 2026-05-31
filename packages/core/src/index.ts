@@ -21,6 +21,9 @@ export {
   UserOverrideNotFoundError,
   InvalidExpirationDateError,
   TemporaryPermissionNotFoundError,
+  TenantNotFoundError,
+  TenantAlreadyExistsError,
+  TenantContextRequiredError,
 } from './errors.js';
 
 export type {
@@ -31,4 +34,6 @@ export type {
   UserOverrideRecord,
   TemporaryPermission,
   GrantTemporaryOptions,
+  Tenant,
+  TenantContext,
 } from './types.js';

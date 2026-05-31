@@ -4,87 +4,96 @@ import { PermissionNotFoundError, UserOverrideNotFoundError } from './errors.js'
 
 /**
  * UserOverrideStore manages the in-memory storage, mappings, and validation
- * of user-specific permission overrides.
+ * of user-specific permission overrides per tenant.
  */
 export class UserOverrideStore {
-  private readonly userOverrides = new Map<string, UserOverrideRecord>();
+  // Structure: Map<userId, Map<tenantId, UserOverrideRecord>>
+  private readonly userOverrides = new Map<string, Map<string, UserOverrideRecord>>();
 
   constructor(private readonly permissionRegistry: PermissionRegistry) {}
 
   /**
-   * Registers a user-specific allow override.
+   * Registers a user-specific allow override within a tenant.
    *
    * @param userId The ID of the user
    * @param permission The permission to override
+   * @param tenantId The ID of the tenant scope
    * @throws PermissionNotFoundError if the permission is not registered
    */
-  public allowUser(userId: string, permission: string): void {
+  public allowUser(userId: string, permission: string, tenantId: string): void {
     if (!this.permissionRegistry.has(permission)) {
       throw new PermissionNotFoundError(permission);
     }
 
-    const record = this.getOrCreateRecord(userId);
+    const record = this.getOrCreateRecord(userId, tenantId);
     record.allow.add(permission);
   }
 
   /**
-   * Registers a user-specific deny override.
+   * Registers a user-specific deny override within a tenant.
    *
    * @param userId The ID of the user
    * @param permission The permission to override
+   * @param tenantId The ID of the tenant scope
    * @throws PermissionNotFoundError if the permission is not registered
    */
-  public denyUser(userId: string, permission: string): void {
+  public denyUser(userId: string, permission: string, tenantId: string): void {
     if (!this.permissionRegistry.has(permission)) {
       throw new PermissionNotFoundError(permission);
     }
 
-    const record = this.getOrCreateRecord(userId);
+    const record = this.getOrCreateRecord(userId, tenantId);
     record.deny.add(permission);
   }
 
   /**
-   * Removes a user-specific allow override.
+   * Removes a user-specific allow override within a tenant.
    *
    * @param userId The ID of the user
    * @param permission The permission override to remove
+   * @param tenantId The ID of the tenant scope
    * @throws UserOverrideNotFoundError if the allow override does not exist
    */
-  public removeUserAllow(userId: string, permission: string): void {
-    const record = this.userOverrides.get(userId);
+  public removeUserAllow(userId: string, permission: string, tenantId: string): void {
+    const tenantMap = this.userOverrides.get(userId);
+    const record = tenantMap?.get(tenantId);
     if (!record || !record.allow.has(permission)) {
       throw new UserOverrideNotFoundError(userId, 'allow', permission);
     }
 
     record.allow.delete(permission);
-    this.cleanIfEmpty(userId);
+    this.cleanIfEmpty(userId, tenantId);
   }
 
   /**
-   * Removes a user-specific deny override.
+   * Removes a user-specific deny override within a tenant.
    *
    * @param userId The ID of the user
    * @param permission The permission override to remove
+   * @param tenantId The ID of the tenant scope
    * @throws UserOverrideNotFoundError if the deny override does not exist
    */
-  public removeUserDeny(userId: string, permission: string): void {
-    const record = this.userOverrides.get(userId);
+  public removeUserDeny(userId: string, permission: string, tenantId: string): void {
+    const tenantMap = this.userOverrides.get(userId);
+    const record = tenantMap?.get(tenantId);
     if (!record || !record.deny.has(permission)) {
       throw new UserOverrideNotFoundError(userId, 'deny', permission);
     }
 
     record.deny.delete(permission);
-    this.cleanIfEmpty(userId);
+    this.cleanIfEmpty(userId, tenantId);
   }
 
   /**
-   * Gets all overrides registered for a user.
+   * Gets all overrides registered for a user within a tenant.
    *
    * @param userId The ID of the user
+   * @param tenantId The ID of the tenant scope
    * @returns UserOverrides structure containing allowed and denied permission arrays
    */
-  public getUserOverrides(userId: string): UserOverrides {
-    const record = this.userOverrides.get(userId);
+  public getUserOverrides(userId: string, tenantId: string): UserOverrides {
+    const tenantMap = this.userOverrides.get(userId);
+    const record = tenantMap?.get(tenantId);
     if (!record) {
       return { allow: [], deny: [] };
     }
@@ -95,17 +104,17 @@ export class UserOverrideStore {
   }
 
   /**
-   * Returns the set of allow overrides for a user.
+   * Returns the set of allow overrides for a user within a tenant.
    */
-  public getAllowSet(userId: string): Set<string> | undefined {
-    return this.userOverrides.get(userId)?.allow;
+  public getAllowSet(userId: string, tenantId: string): Set<string> | undefined {
+    return this.userOverrides.get(userId)?.get(tenantId)?.allow;
   }
 
   /**
-   * Returns the set of deny overrides for a user.
+   * Returns the set of deny overrides for a user within a tenant.
    */
-  public getDenySet(userId: string): Set<string> | undefined {
-    return this.userOverrides.get(userId)?.deny;
+  public getDenySet(userId: string, tenantId: string): Set<string> | undefined {
+    return this.userOverrides.get(userId)?.get(tenantId)?.deny;
   }
 
   /**
@@ -116,16 +125,22 @@ export class UserOverrideStore {
   }
 
   /**
-   * Retrieves or creates a UserOverrideRecord for a user.
+   * Retrieves or creates a UserOverrideRecord for a user within a tenant.
    */
-  private getOrCreateRecord(userId: string): UserOverrideRecord {
-    let record = this.userOverrides.get(userId);
+  private getOrCreateRecord(userId: string, tenantId: string): UserOverrideRecord {
+    let tenantMap = this.userOverrides.get(userId);
+    if (!tenantMap) {
+      tenantMap = new Map<string, UserOverrideRecord>();
+      this.userOverrides.set(userId, tenantMap);
+    }
+
+    let record = tenantMap.get(tenantId);
     if (!record) {
       record = {
         allow: new Set<string>(),
         deny: new Set<string>(),
       };
-      this.userOverrides.set(userId, record);
+      tenantMap.set(tenantId, record);
     }
     return record;
   }
@@ -133,10 +148,16 @@ export class UserOverrideStore {
   /**
    * Removes a user's record completely if both Sets are empty.
    */
-  private cleanIfEmpty(userId: string): void {
-    const record = this.userOverrides.get(userId);
-    if (record && record.allow.size === 0 && record.deny.size === 0) {
-      this.userOverrides.delete(userId);
+  private cleanIfEmpty(userId: string, tenantId: string): void {
+    const tenantMap = this.userOverrides.get(userId);
+    if (tenantMap) {
+      const record = tenantMap.get(tenantId);
+      if (record && record.allow.size === 0 && record.deny.size === 0) {
+        tenantMap.delete(tenantId);
+      }
+      if (tenantMap.size === 0) {
+        this.userOverrides.delete(userId);
+      }
     }
   }
 }

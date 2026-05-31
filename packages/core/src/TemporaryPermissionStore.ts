@@ -8,15 +8,16 @@ import {
 
 /**
  * TemporaryPermissionStore manages the in-memory storage, mappings, validation,
- * and expirations of user-specific temporary permissions.
+ * and expirations of user-specific temporary permissions per tenant.
  */
 export class TemporaryPermissionStore {
-  private readonly store = new Map<string, TemporaryPermission[]>();
+  // Structure: Map<userId, Map<tenantId, TemporaryPermission[]>>
+  private readonly store = new Map<string, Map<string, TemporaryPermission[]>>();
 
   constructor(private readonly permissionRegistry: PermissionRegistry) {}
 
   /**
-   * Grants a temporary permission to a user.
+   * Grants a temporary permission to a user within a tenant scope.
    *
    * @param options Details of the temporary grant
    * @throws PermissionNotFoundError if the permission is not registered
@@ -24,6 +25,7 @@ export class TemporaryPermissionStore {
    */
   public grantTemporary(options: GrantTemporaryOptions): void {
     const { userId, permission, expiresAt } = options;
+    const tenantId = options.tenantId || '__default__';
 
     // Validate permission registry presence
     if (!this.permissionRegistry.has(permission)) {
@@ -39,10 +41,16 @@ export class TemporaryPermissionStore {
       throw new InvalidExpirationDateError();
     }
 
-    let records = this.store.get(userId);
+    let tenantMap = this.store.get(userId);
+    if (!tenantMap) {
+      tenantMap = new Map<string, TemporaryPermission[]>();
+      this.store.set(userId, tenantMap);
+    }
+
+    let records = tenantMap.get(tenantId);
     if (!records) {
       records = [];
-      this.store.set(userId, records);
+      tenantMap.set(tenantId, records);
     }
 
     const existingRecord = records.find((r) => r.permission === permission);
@@ -54,14 +62,19 @@ export class TemporaryPermissionStore {
   }
 
   /**
-   * Revokes a temporary permission from a user.
+   * Revokes a temporary permission from a user within a tenant scope.
    *
    * @param userId The ID of the user
    * @param permission The permission to revoke
+   * @param tenantId The ID of the tenant scope
    * @throws TemporaryPermissionNotFoundError if the temporary permission does not exist
    */
-  public revokeTemporary(userId: string, permission: string): void {
-    const records = this.store.get(userId);
+  public revokeTemporary(userId: string, permission: string, tenantId: string): void {
+    const tenantMap = this.store.get(userId);
+    if (!tenantMap) {
+      throw new TemporaryPermissionNotFoundError(userId, permission);
+    }
+    const records = tenantMap.get(tenantId);
     if (!records) {
       throw new TemporaryPermissionNotFoundError(userId, permission);
     }
@@ -73,55 +86,70 @@ export class TemporaryPermissionStore {
 
     records.splice(index, 1);
     if (records.length === 0) {
-      this.store.delete(userId);
+      tenantMap.delete(tenantId);
+      if (tenantMap.size === 0) {
+        this.store.delete(userId);
+      }
     }
   }
 
   /**
-   * Retrieves all temporary permissions registered for a user.
+   * Retrieves all temporary permissions registered for a user within a tenant scope.
    *
    * @param userId The ID of the user
+   * @param tenantId The ID of the tenant scope
    * @returns An array of temporary permissions
    */
-  public getTemporaryPermissions(userId: string): TemporaryPermission[] {
-    const records = this.store.get(userId);
+  public getTemporaryPermissions(userId: string, tenantId: string): TemporaryPermission[] {
+    const tenantMap = this.store.get(userId);
+    const records = tenantMap?.get(tenantId);
     return records ? records.map((r) => ({ ...r })) : [];
   }
 
   /**
    * Scans and removes all expired temporary permission records.
    *
-   * @returns An array of userIds whose expired permissions were cleaned up
+   * @returns An array of { userId, tenantId } coordinates whose expired permissions were cleaned up
    */
-  public cleanupExpiredPermissions(): string[] {
+  public cleanupExpiredPermissions(): { userId: string; tenantId: string }[] {
     const now = Date.now();
-    const cleanedUserIds: string[] = [];
+    const cleanedCoordinates: { userId: string; tenantId: string }[] = [];
 
-    for (const [userId, records] of this.store.entries()) {
-      const initialSize = records.length;
-      const validRecords = records.filter((r) => r.expiresAt.getTime() > now);
+    for (const [userId, tenantMap] of this.store.entries()) {
+      for (const [tenantId, records] of tenantMap.entries()) {
+        const initialSize = records.length;
+        const validRecords = records.filter((r) => r.expiresAt.getTime() > now);
 
-      if (validRecords.length < initialSize) {
-        cleanedUserIds.push(userId);
-        if (validRecords.length === 0) {
-          this.store.delete(userId);
-        } else {
-          this.store.set(userId, validRecords);
+        if (validRecords.length < initialSize) {
+          cleanedCoordinates.push({ userId, tenantId });
+          if (validRecords.length === 0) {
+            tenantMap.delete(tenantId);
+          } else {
+            tenantMap.set(tenantId, validRecords);
+          }
         }
+      }
+      if (tenantMap.size === 0) {
+        this.store.delete(userId);
       }
     }
 
-    return cleanedUserIds;
+    return cleanedCoordinates;
   }
 
   /**
-   * Cleans up expired temporary permissions for a specific user ID.
+   * Cleans up expired temporary permissions for a specific user ID and tenant.
    *
    * @param userId The ID of the user to clean up
+   * @param tenantId The ID of the tenant scope to clean up
    * @returns true if any expired permissions were cleaned up, false otherwise
    */
-  public cleanupUserExpiredPermissions(userId: string): boolean {
-    const records = this.store.get(userId);
+  public cleanupUserExpiredPermissions(userId: string, tenantId: string): boolean {
+    const tenantMap = this.store.get(userId);
+    if (!tenantMap) {
+      return false;
+    }
+    const records = tenantMap.get(tenantId);
     if (!records) {
       return false;
     }
@@ -132,9 +160,12 @@ export class TemporaryPermissionStore {
 
     if (validRecords.length < initialSize) {
       if (validRecords.length === 0) {
-        this.store.delete(userId);
+        tenantMap.delete(tenantId);
+        if (tenantMap.size === 0) {
+          this.store.delete(userId);
+        }
       } else {
-        this.store.set(userId, validRecords);
+        tenantMap.set(tenantId, validRecords);
       }
       return true;
     }

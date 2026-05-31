@@ -9,7 +9,7 @@ import { RoleNotFoundError, PermissionNotFoundError } from './errors.js';
 /**
  * PermissionResolver manages the assignment of permissions to roles and resolves
  * user access checks. It implements high-performance priority-based permission checks
- * with memoized role ancestor and double-nested user permission caches.
+ * with memoized role ancestor and triple-nested user permission caches.
  */
 export class PermissionResolver {
   // Main mapping of roles to all granted permissions as requested by internal data structures.
@@ -22,8 +22,8 @@ export class PermissionResolver {
   // Memoization cache mapping each role name to its resolved set of all recursive ancestors.
   private readonly ancestorCache = new Map<string, Set<string>>();
 
-  // Double-nested user permission cache mapping userId -> permission -> { value: boolean, expiresAt?: number }.
-  private readonly userPermissionCache = new Map<string, Map<string, { value: boolean; expiresAt?: number }>>();
+  // Triple-nested user permission cache mapping userId -> tenantId -> permission -> { value: boolean, expiresAt?: number }.
+  private readonly userPermissionCache = new Map<string, Map<string, Map<string, { value: boolean; expiresAt?: number }>>>();
 
   constructor(
     private readonly roleRegistry: RoleRegistry,
@@ -50,6 +50,16 @@ export class PermissionResolver {
    */
   public invalidateUserCache(userId: string): void {
     this.userPermissionCache.delete(userId);
+  }
+
+  /**
+   * Invalidates cache for a specific user ID and tenant context.
+   *
+   * @param userId The ID of the user to invalidate
+   * @param tenantId The ID of the tenant scope
+   */
+  public invalidateUserTenantCache(userId: string, tenantId: string): void {
+    this.userPermissionCache.get(userId)?.delete(tenantId);
   }
 
   /**
@@ -112,6 +122,7 @@ export class PermissionResolver {
     }
     roleGrants.add(permission);
 
+    // Segregate grants to achieve O(number_of_user_roles) check complexity
     if (permission.includes('*')) {
       let wildcards = this.wildcardGrants.get(roleName);
       if (!wildcards) {
@@ -131,16 +142,25 @@ export class PermissionResolver {
 
   /**
    * Checks whether a user has a specific permission.
-   * Runs in O(1) warm-cache complexity and enforces Priority 1-6 evaluation checks.
+   * Runs in O(1) warm-cache complexity and enforces Priority 1-7 evaluation checks.
    *
    * @param userId The ID of the user
    * @param permission The target permission string to check
    * @param passedRoles Optional array of pre-resolved roles to perform stateless checks
+   * @param tenantId The organization or tenant ID context
    * @returns true if the user has access, false otherwise
    */
-  public can(userId: string, permission: string, passedRoles?: string[]): boolean {
+  public can(
+    userId: string,
+    permission: string,
+    passedRoles: string[] | undefined,
+    tenantId: string,
+  ): boolean {
+    const activeTenantId = tenantId;
+
     // 1. Warm Cache Path check
-    const userCache = this.userPermissionCache.get(userId);
+    const tenantMap = this.userPermissionCache.get(userId);
+    const userCache = tenantMap?.get(activeTenantId);
     if (userCache) {
       const cached = userCache.get(permission);
       if (cached !== undefined) {
@@ -154,17 +174,22 @@ export class PermissionResolver {
 
     // Helper to store in nested cache and return the evaluated result
     const cacheResult = (result: boolean, expiresAt?: number): boolean => {
-      let uCache = this.userPermissionCache.get(userId);
+      let tMap = this.userPermissionCache.get(userId);
+      if (!tMap) {
+        tMap = new Map<string, Map<string, { value: boolean; expiresAt?: number }>>();
+        this.userPermissionCache.set(userId, tMap);
+      }
+      let uCache = tMap.get(activeTenantId);
       if (!uCache) {
         uCache = new Map<string, { value: boolean; expiresAt?: number }>();
-        this.userPermissionCache.set(userId, uCache);
+        tMap.set(activeTenantId, uCache);
       }
       uCache.set(permission, { value: result, expiresAt });
       return result;
     };
 
     // --- PRIORITY 1: User Deny Overrides (Exact and Wildcard) ---
-    const denySet = this.userOverrideStore.getDenySet(userId);
+    const denySet = this.userOverrideStore.getDenySet(userId, activeTenantId);
     if (denySet) {
       if (denySet.has(permission)) {
         return cacheResult(false);
@@ -177,7 +202,7 @@ export class PermissionResolver {
     }
 
     // --- PRIORITY 2: User Allow Overrides (Exact and Wildcard) ---
-    const allowSet = this.userOverrideStore.getAllowSet(userId);
+    const allowSet = this.userOverrideStore.getAllowSet(userId, activeTenantId);
     if (allowSet) {
       if (allowSet.has(permission)) {
         return cacheResult(true);
@@ -192,10 +217,10 @@ export class PermissionResolver {
     // --- PRIORITY 3: Temporary Permissions (Active and not expired, Exact and Wildcard) ---
     const autoCleanup = this.options?.autoCleanupExpiredPermissions ?? true;
     if (autoCleanup) {
-      this.temporaryPermissionStore.cleanupUserExpiredPermissions(userId);
+      this.temporaryPermissionStore.cleanupUserExpiredPermissions(userId, activeTenantId);
     }
 
-    const tempPermissions = this.temporaryPermissionStore.getTemporaryPermissions(userId);
+    const tempPermissions = this.temporaryPermissionStore.getTemporaryPermissions(userId, activeTenantId);
     const now = Date.now();
     for (const tempPerm of tempPermissions) {
       if (tempPerm.expiresAt.getTime() > now) {
@@ -209,7 +234,7 @@ export class PermissionResolver {
     }
 
     // Resolve direct roles
-    const directRoles = passedRoles || this.userRoleStore.getRoles(userId);
+    const directRoles = passedRoles || this.userRoleStore.getRoles(userId, activeTenantId);
     if (directRoles.length === 0) {
       return cacheResult(false);
     }
@@ -224,7 +249,7 @@ export class PermissionResolver {
       }
     }
 
-    // --- PRIORITY 3 & 4: Role Exact Permissions (Direct and Inherited) ---
+    // --- PRIORITY 4 & 5: Role Exact Permissions (Direct and Inherited) ---
     for (const role of activeRoles) {
       const exacts = this.exactGrants.get(role);
       if (exacts && exacts.has(permission)) {
@@ -232,7 +257,7 @@ export class PermissionResolver {
       }
     }
 
-    // --- PRIORITY 5: Wildcard Permissions (Direct and Inherited roles) ---
+    // --- PRIORITY 6: Wildcard Permissions (Direct and Inherited roles) ---
     for (const role of activeRoles) {
       const wildcards = this.wildcardGrants.get(role);
       if (wildcards) {
@@ -244,7 +269,7 @@ export class PermissionResolver {
       }
     }
 
-    // --- PRIORITY 6: Default Deny ---
+    // --- PRIORITY 7: Default Deny ---
     return cacheResult(false);
   }
 

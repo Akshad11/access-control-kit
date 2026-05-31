@@ -8,7 +8,7 @@
 
 | Package | Version | Description |
 | :--- | :--- | :--- |
-| [`@access-control-kit/core`](/packages/core) | **`v0.4.0`** | Core RBAC validation, hierarchical inheritance, direct user overrides, temporary/time-bound permissions, cached wildcard matching, and stateless authorization engine. |
+| [`@access-control-kit/core`](/packages/core) | **`v0.5.0`** | Core RBAC validation, hierarchical inheritance, direct user overrides, temporary/time-bound permissions, multi-tenant organization scoping, cached wildcard matching, and stateless authorization engine. |
 
 ---
 
@@ -71,7 +71,7 @@ const allowed = auth.can(user, 'patient.view'); // true
 | **`v0.2`** | **Done** | Role Inheritance support |
 | **`v0.3`** | **Done** | User Overrides capabilities |
 | **`v0.4`** | **Done** | Temporary/Time-based Permissions |
-| **`v0.5`** | Planned | Multi-Tenant context isolation |
+| **`v0.5`** | **Done** | Multi-Tenant context isolation |
 | **`v0.6`** | Planned | Ownership validation rules |
 | **`v0.7`** | Planned | ABAC condition-based Policy Engine |
 | **`v0.8`** | Planned | `@access-control-kit/express` package |

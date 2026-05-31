@@ -117,3 +117,33 @@ export class TemporaryPermissionNotFoundError extends AccessControlError {
     super(`No temporary permission found for user "${userId}" and permission "${permission}".`);
   }
 }
+
+/**
+ * Thrown when trying to reference a tenant that does not exist.
+ */
+export class TenantNotFoundError extends AccessControlError {
+  override readonly name = 'TenantNotFoundError';
+  constructor(tenantId: string) {
+    super(`Tenant "${tenantId}" was not found.`);
+  }
+}
+
+/**
+ * Thrown when trying to register a tenant ID that already exists.
+ */
+export class TenantAlreadyExistsError extends AccessControlError {
+  override readonly name = 'TenantAlreadyExistsError';
+  constructor(tenantId: string) {
+    super(`Tenant "${tenantId}" already exists.`);
+  }
+}
+
+/**
+ * Thrown when an operation is performed without a required tenant context.
+ */
+export class TenantContextRequiredError extends AccessControlError {
+  override readonly name = 'TenantContextRequiredError';
+  constructor(message: string = 'Tenant context is required when multi-tenant mode is active.') {
+    super(message);
+  }
+}
