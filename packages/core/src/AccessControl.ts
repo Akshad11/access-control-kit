@@ -1,32 +1,35 @@
-import { User, Permission } from './types.js';
+import { User, Permission, UserOverrides } from './types.js';
 import { RoleRegistry } from './RoleRegistry.js';
 import { PermissionRegistry } from './PermissionRegistry.js';
 import { UserRoleStore } from './UserRoleStore.js';
 import { WildcardMatcher } from './WildcardMatcher.js';
 import { PermissionResolver } from './PermissionResolver.js';
 import { RoleBuilder } from './RoleBuilder.js';
+import { UserOverrideStore } from './UserOverrideStore.js';
 
 /**
- * AccessControl is the main entry point class for Phase 1 of the Access Control Kit.
- * It coordinates role registries, permission registries, assignment stores, and resolvers.
+ * AccessControl is the main coordinator class for Access Control Kit.
+ * It exposes public APIs for RBAC, Role Inheritance, and User Overrides.
  */
 export class AccessControl {
   private readonly roleRegistry = new RoleRegistry();
   private readonly permissionRegistry = new PermissionRegistry();
   private readonly userRoleStore = new UserRoleStore(this.roleRegistry);
   private readonly wildcardMatcher = new WildcardMatcher();
+  private readonly userOverrideStore = new UserOverrideStore(this.permissionRegistry);
   private readonly permissionResolver = new PermissionResolver(
     this.roleRegistry,
     this.permissionRegistry,
     this.userRoleStore,
     this.wildcardMatcher,
+    this.userOverrideStore,
   );
 
   /**
    * Registers a new role in the system.
    *
    * @param name The unique name of the role
-   * @returns The registered Role object
+   * @returns A RoleBuilder instance to support fluent method chaining
    * @throws InvalidRoleError if validation fails
    * @throws RoleAlreadyExistsError if role exists
    */
@@ -60,6 +63,8 @@ export class AccessControl {
    */
   public grant(roleName: string, permission: Permission): void {
     this.permissionResolver.grant(roleName, permission);
+    // Purge permission resolution cache as a new grant affects all evaluations
+    this.permissionResolver.invalidateCache();
   }
 
   /**
@@ -72,6 +77,7 @@ export class AccessControl {
    */
   public assignRole(userId: string, roleName: string): void {
     this.userRoleStore.assignRole(userId, roleName);
+    this.permissionResolver.invalidateUserCache(userId);
   }
 
   /**
@@ -84,6 +90,7 @@ export class AccessControl {
    */
   public removeRole(userId: string, roleName: string): void {
     this.userRoleStore.removeRole(userId, roleName);
+    this.permissionResolver.invalidateUserCache(userId);
   }
 
   /**
@@ -97,8 +104,66 @@ export class AccessControl {
   }
 
   /**
-   * Performs an authorization check. Returns true if the user's assigned roles grant
-   * the requested permission, directly or via wildcard expansion.
+   * Registers a user-specific permission allow override.
+   *
+   * @param userId The ID of the user
+   * @param permission The permission to allow
+   * @throws PermissionNotFoundError if the permission is not registered
+   */
+  public allowUser(userId: string, permission: string): void {
+    this.userOverrideStore.allowUser(userId, permission);
+    this.permissionResolver.invalidateUserCache(userId);
+  }
+
+  /**
+   * Registers a user-specific permission deny override.
+   *
+   * @param userId The ID of the user
+   * @param permission The permission to deny
+   * @throws PermissionNotFoundError if the permission is not registered
+   */
+  public denyUser(userId: string, permission: string): void {
+    this.userOverrideStore.denyUser(userId, permission);
+    this.permissionResolver.invalidateUserCache(userId);
+  }
+
+  /**
+   * Removes a user-specific permission allow override.
+   *
+   * @param userId The ID of the user
+   * @param permission The permission override to remove
+   * @throws UserOverrideNotFoundError if the allow override does not exist
+   */
+  public removeUserAllow(userId: string, permission: string): void {
+    this.userOverrideStore.removeUserAllow(userId, permission);
+    this.permissionResolver.invalidateUserCache(userId);
+  }
+
+  /**
+   * Removes a user-specific permission deny override.
+   *
+   * @param userId The ID of the user
+   * @param permission The permission override to remove
+   * @throws UserOverrideNotFoundError if the deny override does not exist
+   */
+  public removeUserDeny(userId: string, permission: string): void {
+    this.userOverrideStore.removeUserDeny(userId, permission);
+    this.permissionResolver.invalidateUserCache(userId);
+  }
+
+  /**
+   * Retrieves all custom overrides registered for a user.
+   *
+   * @param userId The ID of the user
+   * @returns UserOverrides structure mapping allowed and denied arrays
+   */
+  public getUserOverrides(userId: string): UserOverrides {
+    return this.userOverrideStore.getUserOverrides(userId);
+  }
+
+  /**
+   * Performs an authorization check. Evaluates user-specific overrides,
+   * direct roles, inherited roles, and wildcard extensions.
    *
    * @param user The user object containing an ID
    * @param permission The target permission string to verify
@@ -127,6 +192,7 @@ export class AccessControl {
     this.roleRegistry.clear();
     this.permissionRegistry.clear();
     this.userRoleStore.clear();
+    this.userOverrideStore.clear();
     this.permissionResolver.clear();
   }
 }

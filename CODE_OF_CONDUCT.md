@@ -32,6 +32,10 @@ Community leaders are responsible for clarifying and enforcing our standards of 
 
 Community leaders have the right and responsibility to remove, edit, or reject comments, commits, code, wiki edits, issues, and other contributions that are not aligned to this Code of Conduct.
 
+## Enforcement and Reporting
+
+Instances of abusive, harassing, or otherwise unacceptable behavior may be reported by contacting the project maintainers at [akshad.dhole14@gmail.com](mailto:akshad.dhole14@gmail.com). All complaints will be reviewed and investigated promptly and fairly.
+
 ---
 
 ## Scope

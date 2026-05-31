@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file. The format 
 
 ---
 
+## [0.3.0] - 2026-05-31
+
+### Added
+- **User Overrides Subsystem**: Implemented user-specific permission allow and deny overrides via `UserOverrideStore`.
+- **Double-Nested Resolution Cache**: Implemented a highly optimized `UserPermissionCache` mapping `userId -> permission -> allowed` to achieve $O(1)$ warm path evaluation performance.
+- **Priority Resolution Engine**: Refactored `PermissionResolver` to enforce the strict six-level priority hierarchy (User Deny > User Allow > Direct Role Exact > Inherited Role Exact > Wildcard Role > Default Deny).
+- **Granular Cache Invalidation**: Hooked cache invalidation so that modifications to user-specific overrides/roles only purge that user's cache, whereas global role/grant modifications invalidate the entire cache.
+- **Custom Errors & Types**: Added `UserOverrideNotFoundError` and typescript typings `UserOverrides`, `UserOverrideRecord`.
+- **Comprehensive Integration Tests**: Reached 100% statement and branch coverage across all active source files including new edge cases.
+
+## [0.2.0] - 2026-05-31
+
+### Added
+- **Hierarchical Role Inheritance**: Added recursive permission inheritance with a fluent builder API (`auth.role("Manager").inherits("Employee")`).
+- **Memoized BFS Resolution**: Implemented optimized traversal of the role inheritance graph using an ancestor memoization cache.
+- **Cycle Prevention**: Added circular dependency detection that throws `CircularRoleInheritanceError` when circular inheritances are attempted.
+- **Inheritance Cache Invalidation**: Automatic cache clears upon registering new inheritance associations.
+
 ## [0.1.0] - 2026-05-31
 
 ### Added

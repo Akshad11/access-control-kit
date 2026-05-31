@@ -8,7 +8,7 @@
 
 | Package | Version | Description |
 | :--- | :--- | :--- |
-| [`@access-control-kit/core`](/packages/core) | **`v0.1.0`** | Core RBAC validation, cached wildcard matching, and stateless authorization engine. |
+| [`@access-control-kit/core`](/packages/core) | **`v0.3.0`** | Core RBAC validation, hierarchical inheritance, direct user overrides, cached wildcard matching, and stateless authorization engine. |
 
 ---
 
@@ -68,8 +68,8 @@ const allowed = auth.can(user, 'patient.view'); // true
 | Version | Status | Target Package / Capability |
 | :--- | :---: | :--- |
 | **`v0.1`** | **Done** | `@access-control-kit/core` base release |
-| **`v0.2`** | Planned | Role Inheritance support |
-| **`v0.3`** | Planned | User Overrides capabilities |
+| **`v0.2`** | **Done** | Role Inheritance support |
+| **`v0.3`** | **Done** | User Overrides capabilities |
 | **`v0.4`** | Planned | Temporary/Time-based Permissions |
 | **`v0.5`** | Planned | Multi-Tenant context isolation |
 | **`v0.6`** | Planned | Ownership validation rules |

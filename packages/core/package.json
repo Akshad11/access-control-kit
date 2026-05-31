@@ -1,6 +1,6 @@
 {
   "name": "@access-control-kit/core",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "description": "Enterprise-ready RBAC with wildcard permissions validation and high performance resolution",
   "main": "./dist/index.cjs",

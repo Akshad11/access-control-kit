@@ -6,8 +6,10 @@ An enterprise-ready, high-performance, strongly-typed Role-Based Access Control 
 
 ## Features
 
-- ⚡ **High Performance**: Permission evaluations resolved in `O(number_of_user_roles)` complexity, avoiding full permission list scans.
+- ⚡ **High Performance**: Permission evaluations resolved in `O(number_of_user_roles)` complexity, avoiding full permission list scans with a double-nested cache.
 - 🎯 **Wildcard Permissions**: Support for flexible patterns (e.g., `*`, `patient.*`, `user.*`) using compiled and cached regular expression matcher.
+- 🛡️ **User Overrides**: Assign direct Allow or Deny overrides per user with absolute priority over role grants.
+- 🔗 **Role Inheritance**: Support hierarchical roles with recursive permission inheritance and cycle prevention.
 - 🛡️ **Fail-Safe Validation**: Enforces strict format checks and handles duplicate/missing assets gracefully with custom errors.
 - 📦 **Modern Output Bundles**: Distributed with tree-shakeable ESM, CommonJS, and complete TypeScript `.d.ts` definitions.
 - 🎨 **Strict TypeScript Support**: Written in pure TypeScript with absolute type safety and zero dependencies.
@@ -108,11 +110,58 @@ auth.role("Admin")
   .inherits("Manager");
 ```
 
-### Inheritance Mechanics
+---
 
-1. **Recursive Resolution**: Permission checks traverse the inheritance graph recursively using a memoized BFS search to retrieve all ancestors, resolving evaluations in `O(number_of_user_roles)` for warm paths.
-2. **Cycle Prevention**: Circular dependencies (e.g. `A inherits B inherits A`) are strictly blocked. Adding an inheritance edge that forms a loop throws `CircularRoleInheritanceError` immediately.
-3. **Cache Invalidation**: All memoized ancestor and permission caches are safely invalidated when any new inheritance relationship is registered.
+## User Overrides
+
+User-specific permission overrides allow you to grant or deny permissions directly to individual users. User overrides take absolute precedence over role-based permissions and role inheritance.
+
+### Priority Resolution Hierarchy
+
+When checking permissions with `auth.can()`, the library evaluates rules in this exact order:
+
+1. **User Deny (Priority 1)**: If a user has a direct exact or wildcard deny override matching the permission, access is **denied**.
+2. **User Allow (Priority 2)**: If a user has a direct exact or wildcard allow override matching the permission, access is **granted**.
+3. **Direct Role - Exact (Priority 3)**: If any role directly assigned to the user grants the exact permission, access is **granted**.
+4. **Inherited Role - Exact (Priority 4)**: If any inherited parent role grants the exact permission, access is **granted**.
+5. **Wildcard Role - Direct/Inherited (Priority 5)**: If any assigned or inherited role grants a wildcard permission that matches, access is **granted**.
+6. **Default Deny (Priority 6)**: If no matching rule is found, access is **denied**.
+
+### Example Usage
+
+```typescript
+// 1. Register base permissions
+auth.permission("invoice.delete");
+auth.permission("patient.edit");
+auth.permission("patient.*");
+
+// 2. Grant/Deny direct overrides to user
+auth.allowUser("user123", "invoice.delete");
+auth.denyUser("user123", "patient.edit");
+
+// 3. Perform Checks
+auth.can({ id: "user123" }, "invoice.delete"); // true (Allow override takes precedence)
+auth.can({ id: "user123" }, "patient.edit");    // false (Deny override takes precedence)
+
+// 4. Wildcard Overrides
+auth.allowUser("user456", "patient.*");
+auth.can({ id: "user456" }, "patient.create"); // true
+
+// 5. Retrieve Overrides
+const overrides = auth.getUserOverrides("user123");
+console.log(overrides); // { allow: ["invoice.delete"], deny: ["patient.edit"] }
+
+// 6. Remove Overrides
+auth.removeUserAllow("user123", "invoice.delete");
+auth.removeUserDeny("user123", "patient.edit");
+```
+
+### Cache Mechanics & Performance
+
+- **Warm Cache Resolution**: When a permission is checked, the resolved value is cached inside a double-nested cache mapped by `userId -> permission -> allowed`. Subsequent checks run in $O(1)$ complexity.
+- **Granular Cache Invalidation**:
+  - Overriding a user's permissions (`allowUser`, `denyUser`, `removeUserAllow`, `removeUserDeny`) or assigning/removing user roles automatically purges the cache specifically for that user.
+  - Modifying global role grants or inheritance maps automatically invalidates the entire cache to ensure system-wide consistency.
 
 ---
 
@@ -147,11 +196,23 @@ Assigns a role to a user. Throws `RoleNotFoundError` if the role does not exist.
 #### `removeRole(userId: string, roleName: string): void`
 Removes an assigned role from a user. Throws `RoleNotFoundError` if the role does not exist.
 
-#### `getRoles(userId: string): string[]`
-Returns all role names currently assigned to the user. Returns an empty array if none.
+#### `allowUser(userId: string, permission: string): void`
+Registers a user-specific permission allow override. Throws `PermissionNotFoundError` if the permission is not registered.
+
+#### `denyUser(userId: string, permission: string): void`
+Registers a user-specific permission deny override. Throws `PermissionNotFoundError` if the permission is not registered.
+
+#### `removeUserAllow(userId: string, permission: string): void`
+Removes a user-specific permission allow override. Throws `UserOverrideNotFoundError` if the allow override does not exist.
+
+#### `removeUserDeny(userId: string, permission: string): void`
+Removes a user-specific permission deny override. Throws `UserOverrideNotFoundError` if the deny override does not exist.
+
+#### `getUserOverrides(userId: string): UserOverrides`
+Retrieves all custom overrides registered for a user. Returns a `UserOverrides` structure mapping `allow` and `deny` permission arrays.
 
 #### `can(user: User, permission: string): boolean`
-Evaluates whether user has access to the target permission. Runs in `O(number_of_user_roles)` complexity.
+Evaluates whether user has access to the target permission. Runs in `O(1)` warm cache complexity.
 
 ---
 
@@ -164,7 +225,8 @@ Evaluates whether user has access to the target permission. Runs in `O(number_of
 | `RoleNotFoundError` | Referencing or assigning a non-existent role |
 | `PermissionNotFoundError` | Mapping a non-existent permission |
 | `InvalidRoleError` | Providing empty or whitespace-only role names |
-| `InvalidPermissionError` | Structuring a invalid permission string (e.g. `***`, `user.`, `.` ) |
+| `InvalidPermissionError` | Structuring an invalid permission string (e.g. `***`, `user.`, `.` ) |
+| `UserOverrideNotFoundError` | Trying to remove a non-existent user allow or deny override |
 
 ---
 

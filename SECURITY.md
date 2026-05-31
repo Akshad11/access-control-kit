@@ -10,7 +10,7 @@ Only the latest major and minor releases receive security updates. We actively e
 
 | Version | Supported |
 | :--- | :---: |
-| v0.1.x | Yes |
+| v0.3.x | Yes |
 
 ---
 

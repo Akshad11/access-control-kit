@@ -22,3 +22,19 @@ export interface Role {
  * Represents a permission string (which can be concrete or include wildcards).
  */
 export type Permission = string;
+
+/**
+ * Public representation of user-specific permission overrides.
+ */
+export interface UserOverrides {
+  allow: string[];
+  deny: string[];
+}
+
+/**
+ * Internal storage record of user-specific permission overrides.
+ */
+export interface UserOverrideRecord {
+  allow: Set<string>;
+  deny: Set<string>;
+}

@@ -2,12 +2,13 @@ import { RoleRegistry } from './RoleRegistry.js';
 import { PermissionRegistry } from './PermissionRegistry.js';
 import { UserRoleStore } from './UserRoleStore.js';
 import { WildcardMatcher } from './WildcardMatcher.js';
+import { UserOverrideStore } from './UserOverrideStore.js';
 import { RoleNotFoundError, PermissionNotFoundError } from './errors.js';
 
 /**
  * PermissionResolver manages the assignment of permissions to roles and resolves
- * user access checks. It implements high-performance checks optimized to O(number_of_user_roles)
- * with recursive hierarchical role ancestor caching.
+ * user access checks. It implements high-performance priority-based permission checks
+ * with memoized role ancestor and double-nested user permission caches.
  */
 export class PermissionResolver {
   // Main mapping of roles to all granted permissions as requested by internal data structures.
@@ -17,27 +18,39 @@ export class PermissionResolver {
   private readonly exactGrants = new Map<string, Set<string>>();
   private readonly wildcardGrants = new Map<string, Set<string>>();
 
-  // Memoization cache mapping each role name to its resolved set of all recursive ancestors
+  // Memoization cache mapping each role name to its resolved set of all recursive ancestors.
   private readonly ancestorCache = new Map<string, Set<string>>();
+
+  // Double-nested user permission cache mapping userId -> permission -> allowed.
+  private readonly userPermissionCache = new Map<string, Map<string, boolean>>();
 
   constructor(
     private readonly roleRegistry: RoleRegistry,
     private readonly permissionRegistry: PermissionRegistry,
     private readonly userRoleStore: UserRoleStore,
     private readonly wildcardMatcher: WildcardMatcher,
+    private readonly userOverrideStore: UserOverrideStore,
   ) {}
 
   /**
    * Invalidates all ancestor and permission resolution caches.
-   * Triggered when new role inheritance relationships are added.
    */
   public invalidateCache(): void {
     this.ancestorCache.clear();
+    this.userPermissionCache.clear();
   }
 
   /**
-   * Retrieves all recursive ancestor roles (parents, grandparents, etc.) of a role.
-   * Leverages memoization to ensure optimal high-performance lookups.
+   * Invalidates caches for a specific user ID.
+   *
+   * @param userId The ID of the user to invalidate
+   */
+  public invalidateUserCache(userId: string): void {
+    this.userPermissionCache.delete(userId);
+  }
+
+  /**
+   * Retrieves all recursive ancestor roles of a role.
    *
    * @param roleName The name of the role
    * @returns Set containing all recursive ancestor role names
@@ -51,13 +64,11 @@ export class PermissionResolver {
     const ancestors = new Set<string>();
     const queue: string[] = [];
 
-    // Gather direct parent roles
     const directParents = this.roleRegistry.getParents(roleName);
     for (const parent of directParents) {
       queue.push(parent);
     }
 
-    // Traverse ancestors recursively using BFS to prevent infinite loops and build linear arrays
     while (queue.length > 0) {
       const current = queue.shift()!;
       if (!ancestors.has(current)) {
@@ -91,7 +102,6 @@ export class PermissionResolver {
       throw new PermissionNotFoundError(permission);
     }
 
-    // Store in the primary grants registry
     let roleGrants = this.grants.get(roleName);
     if (!roleGrants) {
       roleGrants = new Set<string>();
@@ -99,7 +109,6 @@ export class PermissionResolver {
     }
     roleGrants.add(permission);
 
-    // Segregate into exact and wildcard permissions to optimize lookup performance
     if (permission.includes('*')) {
       let wildcards = this.wildcardGrants.get(roleName);
       if (!wildcards) {
@@ -119,7 +128,7 @@ export class PermissionResolver {
 
   /**
    * Checks whether a user has a specific permission.
-   * Runs in O(number_of_user_roles) check complexity by utilizing memoized parent hierarchies.
+   * Runs in O(1) warm-cache complexity and enforces Priority 1-6 evaluation checks.
    *
    * @param userId The ID of the user
    * @param permission The target permission string to check
@@ -127,12 +136,59 @@ export class PermissionResolver {
    * @returns true if the user has access, false otherwise
    */
   public can(userId: string, permission: string, passedRoles?: string[]): boolean {
-    const directRoles = passedRoles || this.userRoleStore.getRoles(userId);
-    if (directRoles.length === 0) {
-      return false;
+    // 1. Warm Cache Path check
+    const userCache = this.userPermissionCache.get(userId);
+    if (userCache) {
+      const cachedValue = userCache.get(permission);
+      if (cachedValue !== undefined) {
+        return cachedValue;
+      }
     }
 
-    // Deduplicate and collect all active roles (direct roles and inherited parent roles)
+    // Helper to store in nested cache and return the evaluated result
+    const cacheResult = (result: boolean): boolean => {
+      let uCache = this.userPermissionCache.get(userId);
+      if (!uCache) {
+        uCache = new Map<string, boolean>();
+        this.userPermissionCache.set(userId, uCache);
+      }
+      uCache.set(permission, result);
+      return result;
+    };
+
+    // --- PRIORITY 1: User Deny Overrides (Exact and Wildcard) ---
+    const denySet = this.userOverrideStore.getDenySet(userId);
+    if (denySet) {
+      if (denySet.has(permission)) {
+        return cacheResult(false);
+      }
+      for (const denyPattern of denySet) {
+        if (this.wildcardMatcher.match(denyPattern, permission)) {
+          return cacheResult(false);
+        }
+      }
+    }
+
+    // --- PRIORITY 2: User Allow Overrides (Exact and Wildcard) ---
+    const allowSet = this.userOverrideStore.getAllowSet(userId);
+    if (allowSet) {
+      if (allowSet.has(permission)) {
+        return cacheResult(true);
+      }
+      for (const allowPattern of allowSet) {
+        if (this.wildcardMatcher.match(allowPattern, permission)) {
+          return cacheResult(true);
+        }
+      }
+    }
+
+    // Resolve direct roles
+    const directRoles = passedRoles || this.userRoleStore.getRoles(userId);
+    if (directRoles.length === 0) {
+      return cacheResult(false);
+    }
+
+    // Gather all active roles (direct roles and inherited parent roles)
     const activeRoles = new Set<string>();
     for (const role of directRoles) {
       activeRoles.add(role);
@@ -142,26 +198,28 @@ export class PermissionResolver {
       }
     }
 
-    // Evaluate permission matches across active roles
+    // --- PRIORITY 3 & 4: Role Exact Permissions (Direct and Inherited) ---
     for (const role of activeRoles) {
-      // 1. Fast O(1) exact match check
       const exacts = this.exactGrants.get(role);
       if (exacts && exacts.has(permission)) {
-        return true;
+        return cacheResult(true);
       }
+    }
 
-      // 2. Wildcard matching (usually O(1) as number of wildcards per role is minimal)
+    // --- PRIORITY 5: Wildcard Permissions (Direct and Inherited roles) ---
+    for (const role of activeRoles) {
       const wildcards = this.wildcardGrants.get(role);
       if (wildcards) {
         for (const wildcard of wildcards) {
           if (this.wildcardMatcher.match(wildcard, permission)) {
-            return true;
+            return cacheResult(true);
           }
         }
       }
     }
 
-    return false;
+    // --- PRIORITY 6: Default Deny ---
+    return cacheResult(false);
   }
 
   /**

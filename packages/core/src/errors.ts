@@ -87,3 +87,13 @@ export class InheritanceRoleNotFoundError extends AccessControlError {
     super(`Parent role "${parentName}" was not found.`);
   }
 }
+
+/**
+ * Thrown when trying to remove a user permission override that does not exist.
+ */
+export class UserOverrideNotFoundError extends AccessControlError {
+  override readonly name = 'UserOverrideNotFoundError';
+  constructor(userId: string, type: 'allow' | 'deny', permission: string) {
+    super(`No ${type} override found for user "${userId}" and permission "${permission}".`);
+  }
+}

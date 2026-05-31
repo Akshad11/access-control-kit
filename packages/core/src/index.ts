@@ -5,6 +5,7 @@ export { UserRoleStore } from './UserRoleStore.js';
 export { PermissionResolver } from './PermissionResolver.js';
 export { WildcardMatcher } from './WildcardMatcher.js';
 export { RoleBuilder } from './RoleBuilder.js';
+export { UserOverrideStore } from './UserOverrideStore.js';
 
 export {
   AccessControlError,
@@ -16,6 +17,7 @@ export {
   InvalidPermissionError,
   CircularRoleInheritanceError,
   InheritanceRoleNotFoundError,
+  UserOverrideNotFoundError,
 } from './errors.js';
 
-export type { User, Role, Permission } from './types.js';
+export type { User, Role, Permission, UserOverrides, UserOverrideRecord } from './types.js';

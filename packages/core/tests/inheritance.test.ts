@@ -3,7 +3,6 @@ import { AccessControl } from '../src/AccessControl.js';
 import {
   CircularRoleInheritanceError,
   InheritanceRoleNotFoundError,
-  RoleAlreadyExistsError,
 } from '../src/errors.js';
 
 describe('Role Inheritance Integration', () => {

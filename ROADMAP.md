@@ -9,8 +9,8 @@ This roadmap outlines our path from the initial core foundation to the comprehen
 | Version | Status | Target Package / Capability | Description |
 | :--- | :---: | :--- | :--- |
 | **`v0.1`** | **Done** | `@access-control-kit/core` | Core RBAC, Wildcard Engine, Stateless checks, and configurations. |
-| **`v0.2`** | Planned | **Role Inheritance** | Nested role chains (e.g. `Admin` inherits `Manager` inherits `Employee`). |
-| **`v0.3`** | Planned | **User Overrides** | Assigning specific permissions directly to a user bypassing role boundaries. |
+| **`v0.2`** | **Done** | **Role Inheritance** | Nested role chains (e.g. `Admin` inherits `Manager` inherits `Employee`). |
+| **`v0.3`** | **Done** | **User Overrides** | Assigning specific permissions directly to a user bypassing role boundaries. |
 | **`v0.4`** | Planned | **Temporary Permissions** | Time-based role assignments and TTL-governed permissions. |
 | **`v0.5`** | Planned | **Multi-Tenant** | Partitioning roles, permissions, and checks by unique tenant dimensions. |
 | **`v0.6`** | Planned | **Ownership** | Contextual resource-owner validation checks (e.g., `user.id === post.authorId`). |
@@ -29,11 +29,11 @@ This roadmap outlines our path from the initial core foundation to the comprehen
 - Stateless, database-agnostic session checking capabilities.
 - dual module bundles (ESM & CJS) with type declarations.
 
-### `v0.2` — Hierarchies & Chains
+### `v0.2` — Hierarchies & Chains (Completed)
 - Support directed acyclic graph (DAG) hierarchies.
 - Automated inheritance resolution to fetch all ancestor grants without loop deadlocks.
 
-### `v0.3` — User-Specific Tweaks
+### `v0.3` — User-Specific Tweaks (Completed)
 - Support precise user bypass: grant or revoke specific permissions directly for a user.
 - Explicit overrides take precedence over inherited role permissions.
 
