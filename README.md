@@ -8,7 +8,7 @@
 
 | Package | Version | Description |
 | :--- | :--- | :--- |
-| [`@access-control-kit/core`](/packages/core) | **`v0.5.0`** | Core RBAC validation, hierarchical inheritance, direct user overrides, temporary/time-bound permissions, multi-tenant organization scoping, cached wildcard matching, and stateless authorization engine. |
+| [`@access-control-kit/core`](/packages/core) | **`v0.5.1`** | Core RBAC validation, hierarchical inheritance, direct user overrides, temporary/time-bound permissions, multi-tenant organization scoping, cached wildcard matching, and stateless authorization engine. |
 
 ---
 

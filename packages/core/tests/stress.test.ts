@@ -80,6 +80,7 @@ describe('Performance Stress Verification Suite', () => {
     const duration = end - start;
     const avgTime = duration / 10000;
 
+    // eslint-disable-next-line no-console
     console.log(`Stress Test Executed 10000 checks in ${duration.toFixed(2)}ms (Average: ${avgTime.toFixed(4)}ms per check)`);
 
     // Verify average lookup time is well under 1ms

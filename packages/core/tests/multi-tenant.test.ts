@@ -205,6 +205,7 @@ describe('Multi-Tenant Integration', () => {
 
     expect(auth.can(u1, 'patient.view', { tenantId: 'tenant-a' })).toBe(true);
     expect(auth.can(u1, 'patient.view', { tenantId: 'tenant-b' })).toBe(false);
+    expect(auth.can(u2, 'patient.view', { tenantId: 'tenant-b' })).toBe(false);
   });
 
   it('should maintain user overrides priority hierarchy per tenant', () => {
