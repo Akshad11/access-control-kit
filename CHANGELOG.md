@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file. The format 
 
 ---
 
+## [0.4.0] - 2026-05-31
+
+### Added
+- **Temporary Permissions Subsystem**: Implemented time-bound user permissions via `TemporaryPermissionStore` supporting active and wildcard matching.
+- **Precedence Hierarchy Update**: Configured `PermissionResolver` to evaluate rules in the strict new seven-level precedence order (User Deny > User Allow > Temporary > Direct Role > Inherited Role > Wildcard Role > Default Deny).
+- **Time-Bound Cache Expirations**: Integrated caching with explicit TTL coordinates, storing `{ value: boolean, expiresAt?: number }` in `userPermissionCache` to automatically clean up expired cached entries.
+- **Automatic & Lazy Cleanup**: Supported lazy auto-cleanup of expired temporary permission records during lookups (governed by customizable `autoCleanupExpiredPermissions` config option).
+- **Manual Cleanup Mappings**: Exposed `cleanupExpiredPermissions()` API in `AccessControl` and `TemporaryPermissionStore` to clear memory and purge invalid cached users.
+- **Custom Temporary Errors & Mappings**: Added `InvalidExpirationDateError`, `TemporaryPermissionNotFoundError`, and types `TemporaryPermission`, `GrantTemporaryOptions`.
+
 ## [0.3.0] - 2026-05-31
 
 ### Added

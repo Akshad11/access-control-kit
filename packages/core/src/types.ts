@@ -38,3 +38,20 @@ export interface UserOverrideRecord {
   allow: Set<string>;
   deny: Set<string>;
 }
+
+/**
+ * Public representation of a temporary permission grant.
+ */
+export interface TemporaryPermission {
+  permission: string;
+  expiresAt: Date;
+}
+
+/**
+ * Options for granting a temporary permission.
+ */
+export interface GrantTemporaryOptions {
+  userId: string;
+  permission: string;
+  expiresAt: Date;
+}

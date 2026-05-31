@@ -6,6 +6,7 @@ export { PermissionResolver } from './PermissionResolver.js';
 export { WildcardMatcher } from './WildcardMatcher.js';
 export { RoleBuilder } from './RoleBuilder.js';
 export { UserOverrideStore } from './UserOverrideStore.js';
+export { TemporaryPermissionStore } from './TemporaryPermissionStore.js';
 
 export {
   AccessControlError,
@@ -18,6 +19,16 @@ export {
   CircularRoleInheritanceError,
   InheritanceRoleNotFoundError,
   UserOverrideNotFoundError,
+  InvalidExpirationDateError,
+  TemporaryPermissionNotFoundError,
 } from './errors.js';
 
-export type { User, Role, Permission, UserOverrides, UserOverrideRecord } from './types.js';
+export type {
+  User,
+  Role,
+  Permission,
+  UserOverrides,
+  UserOverrideRecord,
+  TemporaryPermission,
+  GrantTemporaryOptions,
+} from './types.js';

@@ -8,6 +8,7 @@ An enterprise-ready, high-performance, strongly-typed Role-Based Access Control 
 
 - ⚡ **High Performance**: Permission evaluations resolved in `O(number_of_user_roles)` complexity, avoiding full permission list scans with a double-nested cache.
 - 🎯 **Wildcard Permissions**: Support for flexible patterns (e.g., `*`, `patient.*`, `user.*`) using compiled and cached regular expression matcher.
+- ⏱️ **Temporary Permissions**: Grant time-bound direct permissions that automatically expire and refuse access once past their TTL.
 - 🛡️ **User Overrides**: Assign direct Allow or Deny overrides per user with absolute priority over role grants.
 - 🔗 **Role Inheritance**: Support hierarchical roles with recursive permission inheritance and cycle prevention.
 - 🛡️ **Fail-Safe Validation**: Enforces strict format checks and handles duplicate/missing assets gracefully with custom errors.
@@ -165,6 +166,69 @@ auth.removeUserDeny("user123", "patient.edit");
 
 ---
 
+## Temporary Permissions
+
+Temporary permissions allow you to grant permissions directly to a user for a limited time. Once the expiration time is reached, access is automatically denied.
+
+### Priority Resolution Hierarchy
+
+When checking permissions with `auth.can()`, the library evaluates rules in this exact order:
+
+1. **User Deny (Priority 1)**: If a user has a direct exact or wildcard deny override matching the permission, access is **denied**.
+2. **User Allow (Priority 2)**: If a user has a direct exact or wildcard allow override matching the permission, access is **granted**.
+3. **Temporary Permissions (Priority 3)**: If a user has an active, non-expired temporary permission matching exactly or via wildcard, access is **granted**.
+4. **Direct Role - Exact (Priority 4)**: If any role directly assigned to the user grants the exact permission, access is **granted**.
+5. **Inherited Role - Exact (Priority 5)**: If any inherited parent role grants the exact permission, access is **granted**.
+6. **Wildcard Role - Direct/Inherited (Priority 6)**: If any assigned or inherited role grants a wildcard permission that matches, access is **granted**.
+7. **Default Deny (Priority 7)**: If no matching rule is found, access is **denied**.
+
+### Example Usage
+
+```typescript
+// 1. Grant temporary access (valid for 1 hour)
+const oneHour = 60 * 60 * 1000;
+const expiresAt = new Date(Date.now() + oneHour);
+
+auth.grantTemporary({
+  userId: "u1",
+  permission: "report.export",
+  expiresAt
+});
+
+// 2. Access is allowed while active
+auth.can({ id: "u1" }, "report.export"); // true
+
+// 3. Retrieve temporary permissions
+const activeTemps = auth.getTemporaryPermissions("u1");
+// [{ permission: "report.export", expiresAt: Date }]
+
+// 4. Revoke temporary permission manually
+auth.revokeTemporary("u1", "report.export");
+
+// 5. Expiration triggers denial automatically
+// (Time travel 1 hour later...)
+auth.can({ id: "u1" }, "report.export"); // false
+```
+
+### Expiration and Lazy Cleanup Mappings
+
+- **Dynamic Check**: Permission checks ignore expired records automatically.
+- **Lazy Auto-Cleanup**: By default, when a permission is checked, the resolver automatically removes any expired temporary permissions for that user to prevent memory leaks. This behavior can be disabled globally:
+  ```typescript
+  const auth = new AccessControl({ autoCleanupExpiredPermissions: false });
+  ```
+- **Manual Cleanup**: You can trigger a global sweep of all expired permissions manually at any time:
+  ```typescript
+  auth.cleanupExpiredPermissions();
+  ```
+
+### Cache TTL Integrations
+
+- **Explicit TTL Caching**: When a permission check is resolved via a temporary permission, the `true` result is cached with an explicit expiration time matching the temporary permission's `expiresAt` timestamp.
+- **Auto Cache Expiration**: The warm cache lookup automatically invalidates and removes entries that have passed their TTL.
+
+---
+
 ## Wildcard Permissions
 
 The library uses a highly optimized compile-once caching engine (`WildcardMatcher`) to evaluate wildcard patterns.
@@ -211,6 +275,18 @@ Removes a user-specific permission deny override. Throws `UserOverrideNotFoundEr
 #### `getUserOverrides(userId: string): UserOverrides`
 Retrieves all custom overrides registered for a user. Returns a `UserOverrides` structure mapping `allow` and `deny` permission arrays.
 
+#### `grantTemporary(options: GrantTemporaryOptions): void`
+Grants a permission directly to a user for a limited time. Throws `PermissionNotFoundError` if the permission is not registered, and `InvalidExpirationDateError` if the expiration date is in the past or invalid.
+
+#### `revokeTemporary(userId: string, permission: string): void`
+Revokes a temporary permission from a user. Throws `TemporaryPermissionNotFoundError` if the temporary permission does not exist.
+
+#### `getTemporaryPermissions(userId: string): TemporaryPermission[]`
+Retrieves all temporary permissions registered for a user.
+
+#### `cleanupExpiredPermissions(): void`
+Scans and removes all expired temporary permission records from memory and invalidates their respective cache entries.
+
 #### `can(user: User, permission: string): boolean`
 Evaluates whether user has access to the target permission. Runs in `O(1)` warm cache complexity.
 
@@ -227,6 +303,8 @@ Evaluates whether user has access to the target permission. Runs in `O(1)` warm 
 | `InvalidRoleError` | Providing empty or whitespace-only role names |
 | `InvalidPermissionError` | Structuring an invalid permission string (e.g. `***`, `user.`, `.` ) |
 | `UserOverrideNotFoundError` | Trying to remove a non-existent user allow or deny override |
+| `InvalidExpirationDateError` | Providing a null, undefined, invalid, or past Date as expiration |
+| `TemporaryPermissionNotFoundError` | Trying to revoke a non-existent temporary permission |
 
 ---
 

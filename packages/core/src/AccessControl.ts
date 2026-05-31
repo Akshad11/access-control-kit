@@ -1,4 +1,4 @@
-import { User, Permission, UserOverrides } from './types.js';
+import { User, Permission, UserOverrides, TemporaryPermission, GrantTemporaryOptions } from './types.js';
 import { RoleRegistry } from './RoleRegistry.js';
 import { PermissionRegistry } from './PermissionRegistry.js';
 import { UserRoleStore } from './UserRoleStore.js';
@@ -6,10 +6,11 @@ import { WildcardMatcher } from './WildcardMatcher.js';
 import { PermissionResolver } from './PermissionResolver.js';
 import { RoleBuilder } from './RoleBuilder.js';
 import { UserOverrideStore } from './UserOverrideStore.js';
+import { TemporaryPermissionStore } from './TemporaryPermissionStore.js';
 
 /**
  * AccessControl is the main coordinator class for Access Control Kit.
- * It exposes public APIs for RBAC, Role Inheritance, and User Overrides.
+ * It exposes public APIs for RBAC, Role Inheritance, User Overrides, and Temporary Permissions.
  */
 export class AccessControl {
   private readonly roleRegistry = new RoleRegistry();
@@ -17,13 +18,20 @@ export class AccessControl {
   private readonly userRoleStore = new UserRoleStore(this.roleRegistry);
   private readonly wildcardMatcher = new WildcardMatcher();
   private readonly userOverrideStore = new UserOverrideStore(this.permissionRegistry);
-  private readonly permissionResolver = new PermissionResolver(
-    this.roleRegistry,
-    this.permissionRegistry,
-    this.userRoleStore,
-    this.wildcardMatcher,
-    this.userOverrideStore,
-  );
+  private readonly temporaryPermissionStore = new TemporaryPermissionStore(this.permissionRegistry);
+  private readonly permissionResolver: PermissionResolver;
+
+  constructor(options?: { autoCleanupExpiredPermissions?: boolean }) {
+    this.permissionResolver = new PermissionResolver(
+      this.roleRegistry,
+      this.permissionRegistry,
+      this.userRoleStore,
+      this.wildcardMatcher,
+      this.userOverrideStore,
+      this.temporaryPermissionStore,
+      options,
+    );
+  }
 
   /**
    * Registers a new role in the system.
@@ -186,6 +194,50 @@ export class AccessControl {
   }
 
   /**
+   * Grants a temporary permission to a user.
+   *
+   * @param options Details of the temporary grant
+   * @throws PermissionNotFoundError if the permission is not registered
+   * @throws InvalidExpirationDateError if the expiration date is invalid or in the past
+   */
+  public grantTemporary(options: GrantTemporaryOptions): void {
+    this.temporaryPermissionStore.grantTemporary(options);
+    this.permissionResolver.invalidateUserCache(options.userId);
+  }
+
+  /**
+   * Revokes a temporary permission from a user.
+   *
+   * @param userId The ID of the user
+   * @param permission The permission to revoke
+   * @throws TemporaryPermissionNotFoundError if the temporary permission does not exist
+   */
+  public revokeTemporary(userId: string, permission: string): void {
+    this.temporaryPermissionStore.revokeTemporary(userId, permission);
+    this.permissionResolver.invalidateUserCache(userId);
+  }
+
+  /**
+   * Retrieves all temporary permissions registered for a user.
+   *
+   * @param userId The ID of the user
+   * @returns An array of temporary permissions
+   */
+  public getTemporaryPermissions(userId: string): TemporaryPermission[] {
+    return this.temporaryPermissionStore.getTemporaryPermissions(userId);
+  }
+
+  /**
+   * Scans and removes all expired temporary permission records and invalidates caches.
+   */
+  public cleanupExpiredPermissions(): void {
+    const cleanedUserIds = this.temporaryPermissionStore.cleanupExpiredPermissions();
+    for (const userId of cleanedUserIds) {
+      this.permissionResolver.invalidateUserCache(userId);
+    }
+  }
+
+  /**
    * Resets all internal stores, registries, and caches.
    */
   public clear(): void {
@@ -193,6 +245,7 @@ export class AccessControl {
     this.permissionRegistry.clear();
     this.userRoleStore.clear();
     this.userOverrideStore.clear();
+    this.temporaryPermissionStore.clear();
     this.permissionResolver.clear();
   }
 }

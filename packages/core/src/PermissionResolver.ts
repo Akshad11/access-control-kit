@@ -3,6 +3,7 @@ import { PermissionRegistry } from './PermissionRegistry.js';
 import { UserRoleStore } from './UserRoleStore.js';
 import { WildcardMatcher } from './WildcardMatcher.js';
 import { UserOverrideStore } from './UserOverrideStore.js';
+import { TemporaryPermissionStore } from './TemporaryPermissionStore.js';
 import { RoleNotFoundError, PermissionNotFoundError } from './errors.js';
 
 /**
@@ -21,8 +22,8 @@ export class PermissionResolver {
   // Memoization cache mapping each role name to its resolved set of all recursive ancestors.
   private readonly ancestorCache = new Map<string, Set<string>>();
 
-  // Double-nested user permission cache mapping userId -> permission -> allowed.
-  private readonly userPermissionCache = new Map<string, Map<string, boolean>>();
+  // Double-nested user permission cache mapping userId -> permission -> { value: boolean, expiresAt?: number }.
+  private readonly userPermissionCache = new Map<string, Map<string, { value: boolean; expiresAt?: number }>>();
 
   constructor(
     private readonly roleRegistry: RoleRegistry,
@@ -30,6 +31,8 @@ export class PermissionResolver {
     private readonly userRoleStore: UserRoleStore,
     private readonly wildcardMatcher: WildcardMatcher,
     private readonly userOverrideStore: UserOverrideStore,
+    private readonly temporaryPermissionStore: TemporaryPermissionStore,
+    private readonly options?: { autoCleanupExpiredPermissions?: boolean },
   ) {}
 
   /**
@@ -139,20 +142,24 @@ export class PermissionResolver {
     // 1. Warm Cache Path check
     const userCache = this.userPermissionCache.get(userId);
     if (userCache) {
-      const cachedValue = userCache.get(permission);
-      if (cachedValue !== undefined) {
-        return cachedValue;
+      const cached = userCache.get(permission);
+      if (cached !== undefined) {
+        if (cached.expiresAt === undefined || cached.expiresAt > Date.now()) {
+          return cached.value;
+        } else {
+          userCache.delete(permission);
+        }
       }
     }
 
     // Helper to store in nested cache and return the evaluated result
-    const cacheResult = (result: boolean): boolean => {
+    const cacheResult = (result: boolean, expiresAt?: number): boolean => {
       let uCache = this.userPermissionCache.get(userId);
       if (!uCache) {
-        uCache = new Map<string, boolean>();
+        uCache = new Map<string, { value: boolean; expiresAt?: number }>();
         this.userPermissionCache.set(userId, uCache);
       }
-      uCache.set(permission, result);
+      uCache.set(permission, { value: result, expiresAt });
       return result;
     };
 
@@ -178,6 +185,25 @@ export class PermissionResolver {
       for (const allowPattern of allowSet) {
         if (this.wildcardMatcher.match(allowPattern, permission)) {
           return cacheResult(true);
+        }
+      }
+    }
+
+    // --- PRIORITY 3: Temporary Permissions (Active and not expired, Exact and Wildcard) ---
+    const autoCleanup = this.options?.autoCleanupExpiredPermissions ?? true;
+    if (autoCleanup) {
+      this.temporaryPermissionStore.cleanupUserExpiredPermissions(userId);
+    }
+
+    const tempPermissions = this.temporaryPermissionStore.getTemporaryPermissions(userId);
+    const now = Date.now();
+    for (const tempPerm of tempPermissions) {
+      if (tempPerm.expiresAt.getTime() > now) {
+        if (tempPerm.permission === permission) {
+          return cacheResult(true, tempPerm.expiresAt.getTime());
+        }
+        if (this.wildcardMatcher.match(tempPerm.permission, permission)) {
+          return cacheResult(true, tempPerm.expiresAt.getTime());
         }
       }
     }

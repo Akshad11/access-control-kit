@@ -97,3 +97,23 @@ export class UserOverrideNotFoundError extends AccessControlError {
     super(`No ${type} override found for user "${userId}" and permission "${permission}".`);
   }
 }
+
+/**
+ * Thrown when a temporary permission's expiration date is invalid or in the past.
+ */
+export class InvalidExpirationDateError extends AccessControlError {
+  override readonly name = 'InvalidExpirationDateError';
+  constructor(message: string = 'Expiration date must be a valid future date.') {
+    super(message);
+  }
+}
+
+/**
+ * Thrown when trying to revoke a temporary permission that does not exist.
+ */
+export class TemporaryPermissionNotFoundError extends AccessControlError {
+  override readonly name = 'TemporaryPermissionNotFoundError';
+  constructor(userId: string, permission: string) {
+    super(`No temporary permission found for user "${userId}" and permission "${permission}".`);
+  }
+}

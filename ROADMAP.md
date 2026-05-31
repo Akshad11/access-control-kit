@@ -11,7 +11,7 @@ This roadmap outlines our path from the initial core foundation to the comprehen
 | **`v0.1`** | **Done** | `@access-control-kit/core` | Core RBAC, Wildcard Engine, Stateless checks, and configurations. |
 | **`v0.2`** | **Done** | **Role Inheritance** | Nested role chains (e.g. `Admin` inherits `Manager` inherits `Employee`). |
 | **`v0.3`** | **Done** | **User Overrides** | Assigning specific permissions directly to a user bypassing role boundaries. |
-| **`v0.4`** | Planned | **Temporary Permissions** | Time-based role assignments and TTL-governed permissions. |
+| **`v0.4`** | **Done** | **Temporary Permissions** | Time-based role assignments and TTL-governed permissions. |
 | **`v0.5`** | Planned | **Multi-Tenant** | Partitioning roles, permissions, and checks by unique tenant dimensions. |
 | **`v0.6`** | Planned | **Ownership** | Contextual resource-owner validation checks (e.g., `user.id === post.authorId`). |
 | **`v0.7`** | Planned | **ABAC Policy Engine** | Attribute-Based Access Control enforcing dynamic, attribute-driven conditions. |
@@ -37,7 +37,7 @@ This roadmap outlines our path from the initial core foundation to the comprehen
 - Support precise user bypass: grant or revoke specific permissions directly for a user.
 - Explicit overrides take precedence over inherited role permissions.
 
-### `v0.4` — Temporal Authorization
+### `v0.4` — Temporal Authorization (Completed)
 - Support transient access: assign roles or grant permissions with a specific expiration timestamp (`expiresAt`).
 - Automatic cleanup of expired mappings during evaluations.
 
